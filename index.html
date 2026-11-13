@@ -565,27 +565,39 @@ function extensoReais(valor) {
   if (c) p.push(extensoInteiro(c) + (c === 1 ? ' CENTAVO' : ' CENTAVOS'));
   return p.length ? p.join(' E ') : 'ZERO REAIS';
 }
-const fmtQtd = n => n.toLocaleString('pt-BR');
+const fmtQtd = n => n.toLocaleString('pt-BR', { maximumFractionDigits: 3 });
+const UNIDADES = {
+  FARDO:    { singular: 'FARDO',    plural: 'FARDOS',    preco: 'O FARDO',    nome: 'fardos',    decimal: false },
+  SACO:     { singular: 'SACO',     plural: 'SACOS',     preco: 'O SACO',     nome: 'sacos',     decimal: false },
+  TONELADA: { singular: 'TONELADA', plural: 'TONELADAS', preco: 'A TONELADA', nome: 'toneladas', decimal: true },
+};
 const fmtMoeda = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 function dataPorExtenso(iso) {
   const [a, m, d] = iso.split('-').map(Number);
   return `${d} de ${MESES[m - 1]} de ${a}`;
 }
-function lerNumero(txt) {               // "3.250" -> 3250 · "92,50" -> 92.5
-  const s = String(txt || '').trim().replace(/\s/g, '').replace(/\./g, '').replace(',', '.');
+// Aceita "3.250" · "3250 fardos" · "92,50" · "92.50" · "R$ 1.250,00" · "7%" · "27,5"
+function lerNumero(txt) {
+  let s = String(txt || '').replace(/[^\d.,]/g, '');
+  if (!/\d/.test(s)) return NaN;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');      // vírgula = decimal; ponto = milhar
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');      // 3.250 · 1.000.000 = milhar
+  if ((s.match(/[.,]/g) || []).length > 1) return NaN;                   // "1,2,3" e afins
   const n = Number(s);
-  return s !== '' && isFinite(n) ? n : NaN;
+  return isFinite(n) ? n : NaN;
 }
 // "texto **negrito** texto" -> segmentos
 function marcacao(txt, base = 'normal') {
   return String(txt).split('**').map((t, i) => ({ t, s: i % 2 ? 'bold' : base })).filter(x => x.t);
 }
 function segmentosItem(it) {
+  const u = UNIDADES[it.unidade] || UNIDADES.FARDO;
+  const marca = it.marca ? ` NA MARCA ${it.marca}` : '';
   return [
-    { t: `${fmtQtd(it.qtd)} FARDOS`, s: 'bold' },
-    { t: ` DE ${it.produto}, COM FARDOS DE ${it.fardo} NA MARCA ${it.marca}, `, s: 'normal' },
+    { t: `${fmtQtd(it.qtd)} ${it.qtd === 1 ? u.singular : u.plural}`, s: 'bold' },
+    { t: ` DE ${it.produto}${marca}, `, s: 'normal' },
     { t: `AO VALOR DE R$ ${fmtMoeda(it.preco)} (${extensoReais(it.preco)}`, s: 'bold' },
-    { t: `) O FARDO, COM ICMS DE ${String(it.icms).replace('.', ',')}% INCLUSO`, s: 'normal' },
+    { t: `) ${u.preco}, COM ICMS DE ${fmtQtd(it.icms)}% INCLUSO`, s: 'normal' },
   ];
 }
 
@@ -698,8 +710,8 @@ const MODELO = {
   vendedor: 'COOPERATIVA AGRÍCOLA MISTA AGUDO LTDA.\nAv. Concórdia, 2662 – Bairro Centro\nAgudo – RS\nCNPJ: 00.212.727/0001-32\nIE: 001/0008594',
   apelidoVendedor: 'COOP MISTA AGUDO',
   itens: [
-    { qtd: '3.250', fardo: '30X1', marca: 'PRATO DO DIA', preco: '92,00', icms: '7', produto: PRODUTO },
-    { qtd: '3.250', fardo: '6X5', marca: 'PRATO DO DIA', preco: '92,00', icms: '7', produto: PRODUTO },
+    { unidade: 'FARDO', qtd: '3.250', marca: 'PRATO DO DIA', preco: '92,00', icms: '7', produto: PRODUTO + ', COM FARDOS DE 30X1' },
+    { unidade: 'FARDO', qtd: '3.250', marca: 'PRATO DO DIA', preco: '92,00', icms: '7', produto: PRODUTO + ', COM FARDOS DE 6X5' },
   ],
   frete: 'CIF.', destino: 'GRAVATAÍ – RS', dias: '60',
   obs: 'EMBARQUE **PARA INICIAR ENTREGA IMEDIATO;**\nMERCADORIA EM **FARDOS**;\nMANDAR A NOTA FISCAL NOS E-MAILS: nfe.atacadaors@uol.com.br e filipe@atacadaors.com.br; • Telefone: 51 3462 0002.',
@@ -716,6 +728,14 @@ function carregar() {
   let salvo = null;
   try { salvo = JSON.parse(localStorage.getItem(CHAVE)); } catch (e) {}
   estado = Object.assign(JSON.parse(JSON.stringify(MODELO)), salvo || {});
+  // dados salvos pela versão anterior (campo "fardo" separado): passa o fardo para dentro da descrição
+  for (const it of estado.itens) {
+    if (!it.unidade) {
+      it.unidade = 'FARDO';
+      if (it.fardo) it.produto = `${it.produto}, COM FARDOS DE ${it.fardo}`;
+      delete it.fardo;
+    }
+  }
   if (estado.ultimoGerado && String(estado.numero) === String(estado.ultimoGerado)) estado.numero = String(Number(estado.numero) + 1);
   estado.data = hoje();
 }
@@ -725,22 +745,27 @@ function desenharItens() {
   const box = $('itens'); box.innerHTML = '';
   estado.itens.forEach((it, i) => {
     const el = document.createElement('div'); el.className = 'item';
+    const u = UNIDADES[it.unidade] || UNIDADES.FARDO;
     el.innerHTML = `
       <div class="item-topo"><strong>Item ${i + 1}</strong>${estado.itens.length > 1 ? '<button type="button" class="remover">Remover</button>' : ''}</div>
       <div class="linha">
-        <div><label>Quantidade de fardos</label><input data-k="qtd" inputmode="numeric"></div>
-        <div><label>Fardo</label><input data-k="fardo" list="tiposFardo"></div>
+        <div><label>Vendido em</label><select data-k="unidade">
+          <option value="FARDO">Fardo</option><option value="SACO">Saco</option><option value="TONELADA">Toneladas</option></select></div>
+        <div><label>Quantidade (${u.nome})</label><input data-k="qtd" inputmode="decimal"></div>
         <div><label>Marca</label><input data-k="marca"></div>
-        <div><label>Preço do fardo (R$)</label><input data-k="preco" inputmode="decimal"></div>
+        <div><label>Preço (R$ ${u.preco.toLowerCase()})</label><input data-k="preco" inputmode="decimal"></div>
         <div><label>ICMS (%)</label><input data-k="icms" inputmode="decimal"></div>
       </div>
-      <details><summary>Mudar a descrição do produto</summary><textarea data-k="produto" rows="3"></textarea></details>
+      <label>Descrição da mercadoria <span class="dica">(edite à vontade)</span></label>
+      <textarea data-k="produto" rows="4"></textarea>
       <div class="item-texto"></div>`;
     el.querySelectorAll('[data-k]').forEach(inp => {
-      inp.value = it[inp.dataset.k];
+      const k = inp.dataset.k;
+      inp.value = it[k];
+      if (k === 'unidade') { inp.addEventListener('change', () => { it.unidade = inp.value; desenharItens(); atualizar(); }); return; }
       inp.addEventListener('input', () => {
-        it[inp.dataset.k] = inp.dataset.k === 'qtd' || inp.dataset.k === 'preco' ? inp.value : inp.value.toUpperCase();
-        if (inp.value !== it[inp.dataset.k]) { const p = inp.selectionStart; inp.value = it[inp.dataset.k]; inp.setSelectionRange(p, p); }
+        it[k] = k === 'qtd' || k === 'preco' || k === 'icms' ? inp.value : inp.value.toUpperCase();
+        if (inp.value !== it[k]) { const p = inp.selectionStart; inp.value = it[k]; inp.setSelectionRange(p, p); }
         atualizar();
       });
     });
@@ -756,12 +781,15 @@ function coletar() {
   if (!/^\d+$/.test(num)) erros.push('Número do pedido: use só números.');
   if (!estado.data) erros.push('Escolha a data.');
   const itens = estado.itens.map((it, i) => {
+    const u = UNIDADES[it.unidade] || UNIDADES.FARDO;
     const qtd = lerNumero(it.qtd), preco = lerNumero(it.preco), icms = lerNumero(it.icms);
-    if (!(qtd > 0) || !Number.isInteger(qtd)) erros.push(`Item ${i + 1}: quantidade inválida.`);
+    if (!(qtd > 0)) erros.push(`Item ${i + 1}: quantidade inválida.`);
+    else if (!u.decimal && !Number.isInteger(qtd)) erros.push(`Item ${i + 1}: quantidade de ${u.nome} tem de ser um número inteiro.`);
     if (!(preco > 0)) erros.push(`Item ${i + 1}: preço inválido.`);
     if (!(icms >= 0)) erros.push(`Item ${i + 1}: ICMS inválido.`);
-    if (!it.fardo.trim() || !it.marca.trim()) erros.push(`Item ${i + 1}: preencha fardo e marca.`);
-    return { qtd, preco, icms, fardo: it.fardo.trim(), marca: it.marca.trim(), produto: it.produto.trim() };
+    if (!it.produto.trim()) erros.push(`Item ${i + 1}: escreva a descrição da mercadoria.`);
+    const produto = it.produto.trim().replace(/\s*\n\s*/g, ' ').replace(/[\s,]+$/, '');
+    return { unidade: it.unidade, qtd, preco, icms, marca: it.marca.trim(), produto };
   });
   if (!/^\d+$/.test(String(estado.dias).trim())) erros.push('Pagamento: informe os dias em número.');
   const linhas = t => String(t).split('\n').map(s => s.trim()).filter(Boolean);
@@ -782,8 +810,12 @@ function atualizar() {
       ? segmentosItem(it).map(s => s.t).join('') : 'Preencha quantidade e preço para ver o texto.';
   });
   const ok = dados.itens.filter(it => it.qtd > 0 && it.preco > 0);
-  const fardos = ok.reduce((a, it) => a + it.qtd, 0), total = ok.reduce((a, it) => a + it.qtd * it.preco, 0);
-  $('resumo').innerHTML = `<span>Total de fardos: <b>${fmtQtd(fardos)}</b></span><span>Valor total: <b>R$ ${fmtMoeda(total)}</b></span>`;
+  const total = ok.reduce((a, it) => a + it.qtd * it.preco, 0);
+  const porUnidade = Object.keys(UNIDADES).map(k => {
+    const soma = ok.filter(it => it.unidade === k).reduce((a, it) => a + it.qtd, 0);
+    return soma ? `<span>Total de ${UNIDADES[k].nome}: <b>${fmtQtd(soma)}</b></span>` : '';
+  }).join('');
+  $('resumo').innerHTML = `${porUnidade}<span>Valor total: <b>R$ ${fmtMoeda(total)}</b></span>`;
   $('erro').innerHTML = erros.join('<br>');
   return { erros, dados };
 }
@@ -801,7 +833,6 @@ CAMPOS.forEach(k => {
   el.addEventListener('input', () => { estado[k] = el.value; atualizar(); });
 });
 desenharItens(); atualizar();
-document.body.insertAdjacentHTML('beforeend', '<datalist id="tiposFardo"><option value="30X1"><option value="6X5"></datalist>');
 
 $('addItem').onclick = () => {
   const ult = estado.itens[estado.itens.length - 1];
