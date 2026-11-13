@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emissor de Pedidos</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Pedidos">
+<link rel="apple-touch-icon" href="icone.png">
+<link rel="icon" href="icone.png">
+<script>/*@@JSPDF@@*/</script>
+<script id="fontes">/*@@FONTES@@*/</script>
+<style>
+  :root { --azul:#3366ff; --fundo:#f3f5f9; --cartao:#fff; --texto:#1d2330; --suave:#5b6475; --borda:#d5dbe6; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--fundo); color:var(--texto); font:18px/1.45 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  .topo { background:var(--azul); color:#fff; padding:18px 16px; text-align:center; }
+  .topo h1 { margin:0; font:700 30px/1.1 "Times New Roman", Times, serif; letter-spacing:1px; }
+  .topo p { margin:4px 0 0; font-size:15px; opacity:.9; }
+  main { max-width:760px; margin:0 auto; padding:16px; }
+  section { background:var(--cartao); border:1px solid var(--borda); border-radius:12px; padding:16px; margin-bottom:16px; }
+  h2 { margin:0 0 12px; font-size:19px; color:var(--azul); }
+  label { display:block; font-weight:600; margin:10px 0 4px; font-size:16px; }
+  .dica { font-weight:400; color:var(--suave); font-size:14px; }
+  input, textarea, select { width:100%; font:inherit; padding:10px 12px; border:1px solid var(--borda); border-radius:8px; background:#fff; color:var(--texto); }
+  textarea { resize:vertical; }
+  input:focus, textarea:focus { outline:2px solid var(--azul); border-color:var(--azul); }
+  .linha { display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:0 12px; }
+  .item { border:1px dashed var(--borda); border-radius:10px; padding:12px; margin-bottom:12px; background:#fafbfd; }
+  .item-topo { display:flex; justify-content:space-between; align-items:center; }
+  .item-topo strong { font-size:17px; }
+  .item-texto { margin-top:10px; font-size:14px; color:var(--suave); background:#fff; border-radius:8px; padding:8px 10px; border:1px solid var(--borda); }
+  button { font:inherit; cursor:pointer; border-radius:10px; border:1px solid var(--borda); background:#fff; padding:10px 14px; }
+  .remover { color:#b42318; border-color:#f1c0bb; font-size:15px; padding:6px 10px; }
+  .grande { display:block; width:100%; font-size:22px; font-weight:700; padding:16px; background:var(--azul); color:#fff; border:0; margin-top:8px; }
+  .secundario { display:block; width:100%; margin-top:10px; }
+  .resumo { display:flex; flex-wrap:wrap; gap:8px 24px; font-size:17px; }
+  .resumo b { color:var(--azul); }
+  details summary { cursor:pointer; font-weight:600; color:var(--suave); }
+  #janelaPrevia { position:fixed; inset:0; z-index:100; background:#2a3040; display:none; flex-direction:column; }
+  #janelaPrevia.aberta { display:flex; }
+  .barra-previa { display:flex; gap:10px; padding:10px 12px; background:#fff; align-items:center; }
+  .barra-previa span { flex:1; font-weight:700; }
+  .barra-previa button { font-size:18px; font-weight:700; padding:10px 16px; }
+  #fecharPrevia { background:#b42318; color:#fff; border:0; }
+  #gerarDaPrevia { background:var(--azul); color:#fff; border:0; }
+  #previa { flex:1; width:100%; border:0; background:#fff; display:none; }
+  #paginasPrevia { flex:1; overflow:auto; -webkit-overflow-scrolling:touch; padding:8px; text-align:center; }
+  #paginasPrevia canvas { display:block; margin:0 auto 8px; background:#fff; box-shadow:0 2px 10px rgba(0,0,0,.4); max-width:100%; height:auto; }
+  .carregando { color:#fff; font-size:18px; margin-top:40px; }
+  .lista-cad { display:none; }
+  .conectado .lista-cad { display:block; }
+  .status-planilha { display:none; font-size:16px; }
+  .status-planilha button { font-size:14px; padding:4px 10px; margin-left:8px; }
+  .aviso-ok { color:#127a3a; font-weight:600; }
+  #dicaIphone { display:none; background:#fff8e1; border:1px solid #f0d58a; border-radius:12px; padding:12px 16px; margin-bottom:16px; font-size:16px; }
+  body.travado { overflow:hidden; }
+  .erro { color:#b42318; font-weight:600; }
+</style>
+</head>
+<body>
+<div class="topo"><h1>MASTER MG</h1><p>Emissor de Pedidos — preencha e clique em GERAR PDF</p></div>
+<main>
+<div id="dicaIphone">📲 <b>Para usar sempre pelo iPhone:</b> toque em <b>Compartilhar</b> (o quadrado com a seta, embaixo) → <b>Adicionar à Tela de Início</b>. Vira um ícone como o de um aplicativo, e o iPhone não apaga o número do pedido nem os dados.</div>
+
+<section id="conexao">
+  <div id="conDesligada">
+    <h2>🔒 Conectar à planilha</h2>
+    <p class="dica">Uma vez só neste aparelho. Com a conexão, os clientes aparecem numa lista e cada pedido gerado é gravado na planilha.</p>
+    <div class="linha">
+      <div><label for="senhaPlanilha">Senha</label><input id="senhaPlanilha" autocomplete="off" autocapitalize="off"></div>
+      <div><label for="geradoPor">Seu nome</label><input id="geradoPor" placeholder="ex.: Francisco"></div>
+    </div>
+    <button type="button" class="secundario" id="conectar">Conectar</button>
+  </div>
+  <div id="conLigada" class="status-planilha"></div>
+  <p class="erro" id="erroConexao"></p>
+</section>
+
+<section>
+  <h2>1. Pedido</h2>
+  <div class="linha">
+    <div><label for="numero">Número do pedido</label><input id="numero" inputmode="numeric"></div>
+    <div><label for="data">Data</label><input id="data" type="date"></div>
+    <div><label for="cidade">Cidade</label><input id="cidade"></div>
+  </div>
+</section>
+
+<section>
+  <h2>2. Comprador</h2>
+  <div class="lista-cad"><label for="listaComprador">Escolher da lista</label><select id="listaComprador"></select></div>
+  <label for="comprador">Dados <span class="dica">(uma informação por linha)</span></label>
+  <textarea id="comprador" rows="6"></textarea>
+  <label for="apelidoComprador">Nome curto <span class="dica">(só para o nome do arquivo)</span></label>
+  <input id="apelidoComprador">
+</section>
+
+<section>
+  <h2>3. Vendedor</h2>
+  <div class="lista-cad"><label for="listaVendedor">Escolher da lista</label><select id="listaVendedor"></select></div>
+  <label for="vendedor">Dados <span class="dica">(uma informação por linha)</span></label>
+  <textarea id="vendedor" rows="6"></textarea>
+  <label for="apelidoVendedor">Nome curto <span class="dica">(só para o nome do arquivo)</span></label>
+  <input id="apelidoVendedor">
+</section>
+
+<section>
+  <h2>4. Mercadoria</h2>
+  <div id="itens"></div>
+  <button type="button" id="addItem">+ Adicionar outro item</button>
+</section>
+
+<section>
+  <h2>5. Entrega e pagamento</h2>
+  <div class="linha">
+    <div><label for="frete">Frete</label><select id="frete"><option>CIF.</option><option>FOB.</option></select></div>
+    <div><label for="destino">Destino</label><input id="destino"></div>
+    <div><label for="dias">Pagamento (dias do embarque)</label><input id="dias" inputmode="numeric"></div>
+  </div>
+  <label for="obs">Outras observações <span class="dica">(uma por linha · o que estiver entre **asteriscos** sai em negrito)</span></label>
+  <textarea id="obs" rows="4"></textarea>
+</section>
+
+<section>
+  <div class="resumo" id="resumo"></div>
+  <p class="erro" id="erro"></p>
+  <p class="aviso-ok" id="avisoPlanilha"></p>
+  <button type="button" class="grande" id="gerar">GERAR PDF</button>
+  <button type="button" class="secundario" id="verPrevia">Ver como vai ficar</button>
+</section>
+<div id="janelaPrevia" role="dialog" aria-label="Prévia do pedido">
+  <div class="barra-previa">
+    <button type="button" id="fecharPrevia">✕ Fechar</button>
+    <span>Prévia</span>
+    <button type="button" id="gerarDaPrevia">GERAR PDF</button>
+  </div>
+  <div id="paginasPrevia"></div>
+  <iframe id="previa" title="Prévia do pedido"></iframe>
+</div>
+
+<section>
+  <details>
+    <summary>Ajustes do modelo (assinatura e rodapé)</summary>
+    <label for="assinante">Quem assina</label><input id="assinante">
+    <label for="cargo">Cargo</label><input id="cargo">
+    <label for="rodape1">Rodapé — linha 1</label><input id="rodape1">
+    <label for="rodape2">Rodapé — linha 2</label><input id="rodape2">
+    <button type="button" class="secundario" id="restaurar">Voltar tudo ao modelo original</button>
+  </details>
+</section>
+</main>
+
+<!-- ===== Gerador do PDF (funções puras) ===== -->
+<script id="gerador">
+const MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+const UN = ['','UM','DOIS','TRÊS','QUATRO','CINCO','SEIS','SETE','OITO','NOVE','DEZ','ONZE','DOZE','TREZE','CATORZE','QUINZE','DEZESSEIS','DEZESSETE','DEZOITO','DEZENOVE'];
+const DZ = ['','','VINTE','TRINTA','QUARENTA','CINQUENTA','SESSENTA','SETENTA','OITENTA','NOVENTA'];
+const CT = ['','CENTO','DUZENTOS','TREZENTOS','QUATROCENTOS','QUINHENTOS','SEISCENTOS','SETECENTOS','OITOCENTOS','NOVECENTOS'];
+
+function ate999(n) {
+  if (n === 100) return 'CEM';
+  const c = Math.floor(n / 100), r = n % 100, p = [];
+  if (c) p.push(CT[c]);
+  if (r) {
+    if (r < 20) p.push(UN[r]);
+    else { const d = Math.floor(r / 10), u = r % 10; p.push(u ? DZ[d] + ' E ' + UN[u] : DZ[d]); }
+  }
+  return p.join(' E ');
+}
+function extensoInteiro(n) {
+  if (n === 0) return 'ZERO';
+  const grupos = [];
+  const bi = Math.floor(n / 1e9), mi = Math.floor(n / 1e6) % 1000, mil = Math.floor(n / 1e3) % 1000, r = n % 1000;
+  if (bi) grupos.push(ate999(bi) + (bi === 1 ? ' BILHÃO' : ' BILHÕES'));
+  if (mi) grupos.push(ate999(mi) + (mi === 1 ? ' MILHÃO' : ' MILHÕES'));
+  if (mil) grupos.push(mil === 1 ? 'MIL' : ate999(mil) + ' MIL');
+  if (r) grupos.push(ate999(r));
+  if (grupos.length === 1) return grupos[0];
+  const ultimo = grupos.pop();
+  const usaE = r && (r < 100 || r % 100 === 0);
+  return grupos.join(' ') + (usaE ? ' E ' : ' ') + ultimo;
+}
+function extensoReais(valor) {
+  const cent = Math.round(valor * 100), i = Math.floor(cent / 100), c = cent % 100, p = [];
+  if (i) {
+    const redondo = i >= 1e6 && i % 1e6 === 0;
+    p.push(extensoInteiro(i) + (redondo ? ' DE' : '') + (i === 1 ? ' REAL' : ' REAIS'));
+  }
+  if (c) p.push(extensoInteiro(c) + (c === 1 ? ' CENTAVO' : ' CENTAVOS'));
+  return p.length ? p.join(' E ') : 'ZERO REAIS';
+}
+const fmtQtd = n => n.toLocaleString('pt-BR', { maximumFractionDigits: 3 });
+const UNIDADES = {
+  FARDO:    { singular: 'FARDO',    plural: 'FARDOS',    preco: 'O FARDO',    nome: 'fardos',    decimal: false },
+  SACO:     { singular: 'SACO',     plural: 'SACOS',     preco: 'O SACO',     nome: 'sacos',     decimal: false },
+  TONELADA: { singular: 'TONELADA', plural: 'TONELADAS', preco: 'A TONELADA', nome: 'toneladas', decimal: true },
+};
+const fmtMoeda = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function dataPorExtenso(iso) {
+  const [a, m, d] = iso.split('-').map(Number);
+  return `${d} de ${MESES[m - 1]} de ${a}`;
+}
+// Aceita "3.250" · "3250 fardos" · "92,50" · "92.50" · "R$ 1.250,00" · "7%" · "27,5"
+function lerNumero(txt) {
+  let s = String(txt || '').replace(/[^\d.,]/g, '');
+  if (!/\d/.test(s)) return NaN;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');      // vírgula = decimal; ponto = milhar
+  else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');      // 3.250 · 1.000.000 = milhar
+  if ((s.match(/[.,]/g) || []).length > 1) return NaN;                   // "1,2,3" e afins
+  const n = Number(s);
+  return isFinite(n) ? n : NaN;
+}
+// "texto **negrito** texto" -> segmentos
+function marcacao(txt, base = 'normal') {
+  return String(txt).split('**').map((t, i) => ({ t, s: i % 2 ? 'bold' : base })).filter(x => x.t);
+}
+function segmentosItem(it) {
+  const u = UNIDADES[it.unidade] || UNIDADES.FARDO;
+  const marca = it.marca ? ` NA MARCA ${it.marca}` : '';
+  return [
+    { t: `${fmtQtd(it.qtd)} ${it.qtd === 1 ? u.singular : u.plural}`, s: 'bold' },
+    { t: ` DE ${it.produto}${marca}, `, s: 'normal' },
+    { t: `AO VALOR DE R$ ${fmtMoeda(it.preco)} (${extensoReais(it.preco)}`, s: 'bold' },
+    { t: `) ${u.preco}, COM ICMS DE ${fmtQtd(it.icms)}% INCLUSO`, s: 'normal' },
+  ];
+}
+
+// Diagramação de texto com estilos misturados, justificada como no Word
+function escreverRico(doc, segs, x, y, larg, entrelinha, justificar) {
+  const palavras = []; let atual = null;
+  for (const sg of segs) {
+    for (const p of sg.t.split(/( +)/)) {
+      if (!p) continue;
+      if (/^ +$/.test(p)) { if (atual) { palavras.push(atual); atual = null; } }
+      else { (atual = atual || []).push({ t: p, s: sg.s }); }
+    }
+  }
+  if (atual) palavras.push(atual);
+  const largura = w => w.reduce((a, p) => { doc.setFont('Serif', p.s); return a + doc.getTextWidth(p.t); }, 0);
+  doc.setFont('Serif', 'normal'); const esp = doc.getTextWidth(' ');
+  const linhas = []; let lin = [], soma = 0;
+  for (const w of palavras) {
+    const lw = largura(w);
+    // como o Word: numa linha justificada, os espaços podem encolher até 20% para caber mais uma palavra
+    const folga = justificar ? lin.length * esp * 0.2 : 0;
+    if (lin.length && soma + esp + lw > larg + folga + 0.01) { linhas.push(lin); lin = []; soma = 0; }
+    soma += (lin.length ? esp : 0) + lw; lin.push({ w, lw });
+  }
+  if (lin.length) linhas.push(lin);
+  linhas.forEach((l, i) => {
+    const total = l.reduce((a, p) => a + p.lw, 0);
+    const ultima = i === linhas.length - 1;
+    const justo = l.length > 1 ? (larg - total) / (l.length - 1) : esp;
+    const gap = justificar && !ultima ? justo : Math.min(esp, justo);
+    let cx = x;
+    for (const { w, lw } of l) {
+      let px = cx;
+      for (const p of w) { doc.setFont('Serif', p.s); doc.text(p.t, px, y); px += doc.getTextWidth(p.t); }
+      cx += lw + gap;
+    }
+    if (!ultima) y += entrelinha;
+  });
+  return y;  // baseline da última linha escrita
+}
+
+function gerarPedidoPDF(jsPDF, d) {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  // Liberation Serif (licença SIL OFL): mesmas medidas da Times New Roman do Word, embutida no PDF
+  for (const [estilo, b64] of Object.entries(FONTES)) {
+    doc.addFileToVFS(`Serif-${estilo}.ttf`, b64);
+    doc.addFont(`Serif-${estilo}.ttf`, 'Serif', estilo);
+  }
+  const C = 297.65, X = 85.104, LARG = 425.3, LH = 13.8;
+  const centro = (txt, y, estilo = 'normal', tam = 12) => {
+    doc.setFont('Serif', estilo); doc.setFontSize(tam); doc.text(txt, C, y, { align: 'center' });
+  };
+  const rodape = () => { doc.setTextColor(0); centro(d.rodape1, 799.68); centro(d.rodape2, 813.48); };
+
+  // Cabeçalho
+  doc.setTextColor(51, 102, 255); centro('MASTER MG', 64.68, 'bold', 42);
+  doc.setTextColor(0); centro('REPRESENTAÇÕES LTDA.', 84.62);
+  centro(`PEDIDO: ${d.numero}/${d.ano}`, 126.26, 'bold');
+  centro(`${d.cidade}, ${dataPorExtenso(d.data)}.`, 167.42);
+  doc.setFontSize(12);
+
+  const rotulo = (txt, y) => {
+    doc.setFont('Serif', 'bolditalic'); doc.text(txt, X, y);
+    doc.setLineWidth(1.2); doc.line(X, y + 1.9, X + doc.getTextWidth(txt), y + 1.9);
+  };
+  let y = 222.86;
+  rotulo('Comprador:', y);
+  doc.setFont('Serif', 'normal');
+  for (const l of d.comprador) { y += LH; doc.text(l, X, y); }
+  y += 2 * LH; rotulo('Vendedor:', y);
+  doc.setFont('Serif', 'normal');
+  for (const l of d.vendedor) { y += LH; doc.text(l, X, y); }
+  for (const it of d.itens) { y += 2 * LH; y = escreverRico(doc, segmentosItem(it), X, y, LARG, LH, true); }
+
+  y += 2 * LH;
+  escreverRico(doc, [{ t: d.frete, s: 'bolditalic' }, { t: ' ' + d.destino, s: 'normal' }], X, y, LARG, LH, false);
+  y += 2 * LH;
+  escreverRico(doc, [{ t: 'OBS.', s: 'italic' }, { t: ':', s: 'normal' }], X, y, LARG, LH, false);
+
+  const LHB = 14.64, BX = 103.1, TX = 121.1;
+  const obs = [[{ t: 'PAGAMENTO ', s: 'normal' }, { t: `${d.dias} DIAS DO EMBARQUE`, s: 'bold' }, { t: ';', s: 'normal' }]]
+    .concat(d.obs.map(o => marcacao(o)));
+  for (const segs of obs) {
+    y += LHB;
+    doc.setFont('Serif', 'normal'); doc.text('•', BX, y);
+    y = escreverRico(doc, segs, TX, y, 510.4 - TX, LHB, true);
+  }
+
+  // Assinatura
+  rodape();
+  let ys = Math.max(709.18, y + 55.3);
+  if (ys + 32 > 785) { doc.addPage(); rodape(); ys = 120; }
+  doc.setFont('Serif', 'normal'); doc.setFontSize(12);
+  doc.text('Ass: ' + '_'.repeat(31), 184.1, ys);
+  centro(d.assinante, ys + 16.08, 'bold');
+  centro(d.cargo, ys + 31.82);
+  return doc;
+}
+</script>
+
+<!-- ===== Tela ===== -->
+<script>
+const CHAVE = 'emissor-pedidos-mastermg-v1';
+const hoje = () => { const t = new Date(); return new Date(t - t.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+const PRODUTO = 'ARROZ AGULHINHA BENEFICIADO TIPO 1 BRANCO, COM NO MÁXIMO 7% DE QUEBRADOS, CONFORME AMOSTRA';
+const MODELO = {
+  numero: '210', cidade: 'Porto Alegre',
+  comprador: 'ATACADÃO COMÉRCIO DE GÊNEROS ALIMENTÍCIOS LTDA.\nRodovia RS 118, KM 14 – Número 10.000.\nBairro Neopolis. CEP: 94.100-420 – Gravataí – RS\nCNPJ: 90.341.561/0001-47\nIE: 057/0294517',
+  apelidoComprador: 'ATACADAO',
+  vendedor: 'COOPERATIVA AGRÍCOLA MISTA AGUDO LTDA.\nAv. Concórdia, 2662 – Bairro Centro\nAgudo – RS\nCNPJ: 00.212.727/0001-32\nIE: 001/0008594',
+  apelidoVendedor: 'COOP MISTA AGUDO',
+  itens: [
+    { unidade: 'FARDO', qtd: '3.250', marca: 'PRATO DO DIA', preco: '92,00', icms: '7', produto: PRODUTO + ', COM FARDOS DE 30X1' },
+    { unidade: 'FARDO', qtd: '3.250', marca: 'PRATO DO DIA', preco: '92,00', icms: '7', produto: PRODUTO + ', COM FARDOS DE 6X5' },
+  ],
+  frete: 'CIF.', destino: 'GRAVATAÍ – RS', dias: '60',
+  obs: 'EMBARQUE **PARA INICIAR ENTREGA IMEDIATO;**\nMERCADORIA EM **FARDOS**;\nMANDAR A NOTA FISCAL NOS E-MAILS: nfe.atacadaors@uol.com.br e filipe@atacadaors.com.br; • Telefone: 51 3462 0002.',
+  assinante: 'Francisco Melo', cargo: 'Diretor MASTER MG',
+  rodape1: 'Rua Dr. João Simplício Alves de Carvalho, 735/ 206 – Fone: 3341 3083',
+  rodape2: 'Bairro Vila Ipiranga – CEP: 91360-260 – Porto Alegre/RS',
+  ultimoGerado: null,
+};
+const CAMPOS = ['numero','data','cidade','comprador','apelidoComprador','vendedor','apelidoVendedor','frete','destino','dias','obs','assinante','cargo','rodape1','rodape2'];
+const $ = id => document.getElementById(id);
+let estado;
+
+function carregar() {
+  let salvo = null;
+  try { salvo = JSON.parse(localStorage.getItem(CHAVE)); } catch (e) {}
+  estado = Object.assign(JSON.parse(JSON.stringify(MODELO)), salvo || {});
+  // dados salvos pela versão anterior (campo "fardo" separado): passa o fardo para dentro da descrição
+  for (const it of estado.itens) {
+    if (!it.unidade) {
+      it.unidade = 'FARDO';
+      if (it.fardo) it.produto = `${it.produto}, COM FARDOS DE ${it.fardo}`;
+      delete it.fardo;
+    }
+  }
+  if (estado.ultimoGerado && String(estado.numero) === String(estado.ultimoGerado)) estado.numero = String(Number(estado.numero) + 1);
+  estado.data = hoje();
+}
+function salvar() { try { localStorage.setItem(CHAVE, JSON.stringify(estado)); } catch (e) {} }
+
+function desenharItens() {
+  const box = $('itens'); box.innerHTML = '';
+  estado.itens.forEach((it, i) => {
+    const el = document.createElement('div'); el.className = 'item';
+    const u = UNIDADES[it.unidade] || UNIDADES.FARDO;
+    el.innerHTML = `
+      <div class="item-topo"><strong>Item ${i + 1}</strong>${estado.itens.length > 1 ? '<button type="button" class="remover">Remover</button>' : ''}</div>
+      <div class="linha">
+        <div><label>Vendido em</label><select data-k="unidade">
+          <option value="FARDO">Fardo</option><option value="SACO">Saco</option><option value="TONELADA">Toneladas</option></select></div>
+        <div><label>Quantidade (${u.nome})</label><input data-k="qtd" inputmode="decimal"></div>
+        <div><label>Marca</label><input data-k="marca"></div>
+        <div><label>Preço (R$ ${u.preco.toLowerCase()})</label><input data-k="preco" inputmode="decimal"></div>
+        <div><label>ICMS (%)</label><input data-k="icms" inputmode="decimal"></div>
+      </div>
+      <label>Descrição da mercadoria <span class="dica">(edite à vontade)</span></label>
+      <textarea data-k="produto" rows="4"></textarea>
+      <div class="item-texto"></div>`;
+    el.querySelectorAll('[data-k]').forEach(inp => {
+      const k = inp.dataset.k;
+      inp.value = it[k];
+      if (k === 'unidade') { inp.addEventListener('change', () => { it.unidade = inp.value; desenharItens(); atualizar(); }); return; }
+      inp.addEventListener('input', () => {
+        it[k] = k === 'qtd' || k === 'preco' || k === 'icms' ? inp.value : inp.value.toUpperCase();
+        if (inp.value !== it[k]) { const p = inp.selectionStart; inp.value = it[k]; inp.setSelectionRange(p, p); }
+        atualizar();
+      });
+    });
+    const rm = el.querySelector('.remover');
+    if (rm) rm.onclick = () => { estado.itens.splice(i, 1); desenharItens(); atualizar(); };
+    box.appendChild(el);
+  });
+}
+
+function coletar() {
+  const erros = [];
+  const num = String(estado.numero).trim();
+  if (!/^\d+$/.test(num)) erros.push('Número do pedido: use só números.');
+  if (!estado.data) erros.push('Escolha a data.');
+  const itens = estado.itens.map((it, i) => {
+    const u = UNIDADES[it.unidade] || UNIDADES.FARDO;
+    const qtd = lerNumero(it.qtd), preco = lerNumero(it.preco), icms = lerNumero(it.icms);
+    if (!(qtd > 0)) erros.push(`Item ${i + 1}: quantidade inválida.`);
+    else if (!u.decimal && !Number.isInteger(qtd)) erros.push(`Item ${i + 1}: quantidade de ${u.nome} tem de ser um número inteiro.`);
+    if (!(preco > 0)) erros.push(`Item ${i + 1}: preço inválido.`);
+    if (!(icms >= 0)) erros.push(`Item ${i + 1}: ICMS inválido.`);
+    if (!it.produto.trim()) erros.push(`Item ${i + 1}: escreva a descrição da mercadoria.`);
+    const produto = it.produto.trim().replace(/\s*\n\s*/g, ' ').replace(/[\s,]+$/, '');
+    return { unidade: it.unidade, qtd, preco, icms, marca: it.marca.trim(), produto };
+  });
+  if (!/^\d+$/.test(String(estado.dias).trim())) erros.push('Pagamento: informe os dias em número.');
+  const linhas = t => String(t).split('\n').map(s => s.trim()).filter(Boolean);
+  return { erros, dados: {
+    numero: num, ano: (estado.data || '').slice(0, 4), data: estado.data, cidade: estado.cidade.trim(),
+    comprador: linhas(estado.comprador), vendedor: linhas(estado.vendedor), itens,
+    frete: estado.frete, destino: estado.destino.trim(), dias: String(estado.dias).trim(), obs: linhas(estado.obs),
+    assinante: estado.assinante.trim(), cargo: estado.cargo.trim(), rodape1: estado.rodape1.trim(), rodape2: estado.rodape2.trim(),
+  }};
+}
+
+function atualizar() {
+  salvar();
+  const { erros, dados } = coletar();
+  document.querySelectorAll('.item').forEach((el, i) => {
+    const it = dados.itens[i];
+    el.querySelector('.item-texto').textContent = it && it.qtd > 0 && it.preco > 0
+      ? segmentosItem(it).map(s => s.t).join('') : 'Preencha quantidade e preço para ver o texto.';
+  });
+  const ok = dados.itens.filter(it => it.qtd > 0 && it.preco > 0);
+  const total = ok.reduce((a, it) => a + it.qtd * it.preco, 0);
+  const porUnidade = Object.keys(UNIDADES).map(k => {
+    const soma = ok.filter(it => it.unidade === k).reduce((a, it) => a + it.qtd, 0);
+    return soma ? `<span>Total de ${UNIDADES[k].nome}: <b>${fmtQtd(soma)}</b></span>` : '';
+  }).join('');
+  $('resumo').innerHTML = `${porUnidade}<span>Valor total: <b>R$ ${fmtMoeda(total)}</b></span>`;
+  $('erro').innerHTML = erros.join('<br>');
+  return { erros, dados };
+}
+
+function montar() {
+  const { erros, dados } = atualizar();
+  if (erros.length) { $('erro').scrollIntoView({ behavior: 'smooth', block: 'center' }); return null; }
+  if (!window.jspdf) { $('erro').textContent = 'O gerador de PDF não carregou. Feche e abra o arquivo de novo.'; return null; }
+  return { doc: gerarPedidoPDF(window.jspdf.jsPDF, dados), dados };
+}
+
+carregar();
+CAMPOS.forEach(k => {
+  const el = $(k); el.value = estado[k];
+  el.addEventListener('input', () => { estado[k] = el.value; atualizar(); });
+});
+desenharItens(); atualizar();
+
+$('addItem').onclick = () => {
+  const ult = estado.itens[estado.itens.length - 1];
+  estado.itens.push(Object.assign({}, ult || MODELO.itens[0], { qtd: '' }));
+  desenharItens(); atualizar();
+};
+$('gerar').onclick = () => {
+  const r = montar(); if (!r) return;
+  const nome = `PED ${r.dados.numero} ${r.dados.ano} ${estado.apelidoComprador.trim()} E ${estado.apelidoVendedor.trim()}`.replace(/\s+/g, ' ').trim();
+  r.doc.setProperties({ title: nome, author: r.dados.assinante });
+  entregar(r.doc, nome).then(ok => {
+    if (!ok) return;
+    estado.ultimoGerado = r.dados.numero; salvar();
+    enfileirarPedido(r.dados);
+  });
+};
+// No celular: abre a tela de compartilhar (WhatsApp etc.) com o PDF anexado. No computador: baixa o arquivo.
+async function entregar(doc, nome) {
+  const toque = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+  if (toque && navigator.canShare) {
+    const arquivo = new File([doc.output('blob')], nome + '.pdf', { type: 'application/pdf' });
+    if (navigator.canShare({ files: [arquivo] })) {
+      try { await navigator.share({ files: [arquivo] }); return true; }
+      catch (e) { if (e.name === 'AbortError') return false; }   // desistiu de compartilhar: o número não avança
+    }
+  }
+  doc.save(nome + '.pdf');
+  return true;
+}
+
+// Prévia desenhada como imagem (pdf.js): funciona no iPhone, onde o PDF dentro da página fica em branco
+const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+let pdfjsPronto = null;
+function carregarPdfjs() {
+  if (!pdfjsPronto) pdfjsPronto = new Promise((ok, falha) => {
+    const s = document.createElement('script'); s.src = PDFJS + 'pdf.min.js';
+    s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS + 'pdf.worker.min.js'; ok(window.pdfjsLib); };
+    s.onerror = () => { pdfjsPronto = null; falha(new Error('sem internet')); };
+    document.head.appendChild(s);
+  });
+  return pdfjsPronto;
+}
+let urlPrevia = null;
+function fecharPrevia() {
+  $('janelaPrevia').classList.remove('aberta'); document.body.classList.remove('travado');
+  $('paginasPrevia').innerHTML = ''; $('previa').style.display = 'none'; $('previa').src = 'about:blank';
+  if (urlPrevia) { URL.revokeObjectURL(urlPrevia); urlPrevia = null; }
+}
+$('verPrevia').onclick = async () => {
+  const r = montar(); if (!r) return;     // gerada na hora: sempre com o que está nos campos agora
+  const box = $('paginasPrevia'); box.innerHTML = '<p class="carregando">Montando a prévia…</p>';
+  $('janelaPrevia').classList.add('aberta'); document.body.classList.add('travado');
+  try {
+    const pdfjs = await carregarPdfjs();
+    const pdf = await pdfjs.getDocument({ data: r.doc.output('arraybuffer') }).promise;
+    box.innerHTML = '';
+    const largura = Math.min(box.clientWidth - 16, 900), dpr = window.devicePixelRatio || 1;
+    for (let n = 1; n <= pdf.numPages; n++) {
+      const pg = await pdf.getPage(n);
+      const vp = pg.getViewport({ scale: largura / pg.getViewport({ scale: 1 }).width * dpr });
+      const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
+      cv.style.width = (vp.width / dpr) + 'px';
+      await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+      box.appendChild(cv);
+    }
+  } catch (e) {                            // sem internet: usa o leitor de PDF do navegador, se houver
+    box.innerHTML = '';
+    if (urlPrevia) URL.revokeObjectURL(urlPrevia);
+    urlPrevia = r.doc.output('bloburl'); $('previa').src = urlPrevia; $('previa').style.display = 'block';
+  }
+};
+$('fecharPrevia').onclick = fecharPrevia;
+const ehIphone = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const naTelaDeInicio = navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+if (ehIphone && !naTelaDeInicio && location.protocol.startsWith('http')) $('dicaIphone').style.display = 'block';
+$('gerarDaPrevia').onclick = () => { fecharPrevia(); $('gerar').click(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharPrevia(); });
+$('restaurar').onclick = () => {
+  if (!confirm('Voltar todos os campos ao modelo original?')) return;
+  // a conexão com a planilha e os pedidos ainda não enviados continuam
+  const manter = { senha: estado.senha, geradoPor: estado.geradoPor, pendentes: estado.pendentes };
+  try { localStorage.setItem(CHAVE, JSON.stringify(manter)); } catch (e) {}
+  location.reload();
+};
+
+// ===== Planilha MASTER_MG (Google) =====
+const API_PLANILHA = '@@API_URL@@';
+let cadastro = { compradores: [], vendedores: [] };
+
+async function chamarPlanilha(corpo) {
+  const r = await fetch(API_PLANILHA, { method: 'POST', body: JSON.stringify(Object.assign({ senha: estado.senha }, corpo)) });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.erro || 'erro');
+  return j;
+}
+// bloco de texto do pedido  <->  campos do cadastro
+function blocoDeCadastro(c) {
+  return [c.razao, c.endereco, c.local, c.cnpj && 'CNPJ: ' + c.cnpj, c.ie && 'IE: ' + c.ie].filter(Boolean).join('\n');
+}
+function cadastroDeBloco(texto, apelido) {
+  const l = String(texto).split('\n').map(s => s.trim()).filter(Boolean);
+  const pega = re => { const x = l.find(s => re.test(s)); return x ? x.replace(re, '').replace(/^\s*:?\s*/, '').trim() : ''; };
+  const resto = l.slice(1).filter(s => !/^CNPJ\b/i.test(s) && !/^IE\b/i.test(s));
+  return { apelido: String(apelido || '').trim().toUpperCase(), razao: l[0] || '', endereco: resto[0] || '',
+           local: resto.slice(1).join(' – '), cnpj: pega(/^CNPJ\b/i), ie: pega(/^IE\b/i) };
+}
+function preencherLista(sel, itens, campoTexto, campoApelido) {
+  sel.innerHTML = '<option value="">— escolher —</option>' + itens.map((c, i) => `<option value="${i}">${c.apelido.replace(/</g, '&lt;')}</option>`).join('');
+  sel.onchange = () => {
+    const c = itens[sel.value]; if (!c) return;
+    $(campoTexto).value = estado[campoTexto] = blocoDeCadastro(c);
+    $(campoApelido).value = estado[campoApelido] = c.apelido;
+    atualizar(); sel.value = '';
+  };
+}
+let ultimoStatus = '';
+function mostrarConexao(msg) {
+  if (msg) ultimoStatus = msg; else msg = ultimoStatus;
+  const ligada = !!estado.senha;
+  document.body.classList.toggle('conectado', ligada);
+  $('conDesligada').style.display = ligada ? 'none' : 'block';
+  $('conLigada').style.display = ligada ? 'block' : 'none';
+  if (ligada) {
+    const pend = (estado.pendentes || []).length;
+    $('conLigada').innerHTML = (msg || '✅ Conectado à planilha') +
+      (pend ? ` · <b>${pend} pedido(s) aguardando envio</b>` : '') +
+      ' <button type="button" id="desconectar">desconectar</button>';
+    $('desconectar').onclick = () => {
+      if (!confirm('Desconectar este aparelho da planilha?')) return;
+      estado.senha = ''; ultimoStatus = ''; salvar(); mostrarConexao();
+    };
+  }
+}
+async function carregarDaPlanilha() {
+  if (!estado.senha) return mostrarConexao();
+  try {
+    const ano = Number((estado.data || hoje()).slice(0, 4));
+    const j = await chamarPlanilha({ acao: 'dados', ano });
+    cadastro = j;
+    preencherLista($('listaComprador'), j.compradores, 'comprador', 'apelidoComprador');
+    preencherLista($('listaVendedor'), j.vendedores, 'vendedor', 'apelidoVendedor');
+    // número do pedido: o próximo depois do último gravado na planilha (vale para todos os aparelhos)
+    if (j.ultimo && Number(estado.numero) <= j.ultimo) { estado.numero = String(j.ultimo + 1); $('numero').value = estado.numero; salvar(); }
+    mostrarConexao(`✅ Conectado à planilha · ${j.compradores.length} comprador(es) · ${j.vendedores.length} vendedor(es)`);
+    $('erroConexao').textContent = '';
+  } catch (e) {
+    if (e.message === 'senha') { estado.senha = ''; salvar(); mostrarConexao(); $('erroConexao').textContent = 'Senha errada. Confira e tente de novo.'; }
+    else { mostrarConexao('⚠️ Sem conexão com a planilha agora — os pedidos ficam guardados e são enviados depois'); }
+  }
+}
+function enfileirarPedido(d) {
+  const id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2);
+  const pedido = {
+    id, numero: d.numero, data: d.data, frete: d.frete, destino: d.destino, dias: d.dias, geradoPor: estado.geradoPor || '',
+    comprador: cadastroDeBloco(estado.comprador, estado.apelidoComprador),
+    vendedor: cadastroDeBloco(estado.vendedor, estado.apelidoVendedor),
+    itens: d.itens.map(it => ({ unidade: it.unidade, qtd: it.qtd, preco: it.preco, icms: it.icms, marca: it.marca, produto: it.produto })),
+  };
+  estado.pendentes = (estado.pendentes || []).concat([pedido]); salvar();
+  enviarPendentes();
+}
+let enviando = false;
+async function enviarPendentes() {
+  if (enviando || !estado.senha || !(estado.pendentes || []).length) return mostrarConexao();
+  enviando = true;
+  try {
+    while (estado.pendentes.length) {
+      const p = estado.pendentes[0];
+      const j = await chamarPlanilha({ acao: 'registrar', pedido: p });
+      estado.pendentes.shift(); salvar();
+      // sem "ultimo" na resposta = este mesmo pedido já tinha sido gravado (reenvio): nada a avisar
+      if ('ultimo' in j) $('avisoPlanilha').textContent = `✅ Pedido ${p.numero} gravado na planilha.` +
+        (j.repetido ? ' ⚠️ Já existia outro pedido com este número — confira na planilha.' : '');
+    }
+    carregarDaPlanilha();
+  } catch (e) {
+    $('avisoPlanilha').textContent = '';
+    mostrarConexao('⚠️ Sem conexão com a planilha agora — os pedidos ficam guardados e são enviados depois');
+  } finally { enviando = false; }
+}
+$('conectar').onclick = async () => {
+  const s = $('senhaPlanilha').value.trim();
+  if (!s) { $('erroConexao').textContent = 'Digite a senha.'; return; }
+  estado.senha = s; estado.geradoPor = $('geradoPor').value.trim(); salvar();
+  $('erroConexao').textContent = 'Conectando…';
+  await carregarDaPlanilha();
+  enviarPendentes();
+};
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { carregarDaPlanilha(); enviarPendentes(); } });
+carregarDaPlanilha().then(enviarPendentes);
+</script>
+</body>
+</html>

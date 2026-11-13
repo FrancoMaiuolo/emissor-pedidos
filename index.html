@@ -446,6 +446,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   #paginasPrevia { flex:1; overflow:auto; -webkit-overflow-scrolling:touch; padding:8px; text-align:center; }
   #paginasPrevia canvas { display:block; margin:0 auto 8px; background:#fff; box-shadow:0 2px 10px rgba(0,0,0,.4); max-width:100%; height:auto; }
   .carregando { color:#fff; font-size:18px; margin-top:40px; }
+  .lista-cad { display:none; }
+  .conectado .lista-cad { display:block; }
+  .status-planilha { display:none; font-size:16px; }
+  .status-planilha button { font-size:14px; padding:4px 10px; margin-left:8px; }
+  .aviso-ok { color:#127a3a; font-weight:600; }
   #dicaIphone { display:none; background:#fff8e1; border:1px solid #f0d58a; border-radius:12px; padding:12px 16px; margin-bottom:16px; font-size:16px; }
   body.travado { overflow:hidden; }
   .erro { color:#b42318; font-weight:600; }
@@ -455,6 +460,20 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 <div class="topo"><h1>MASTER MG</h1><p>Emissor de Pedidos — preencha e clique em GERAR PDF</p></div>
 <main>
 <div id="dicaIphone">📲 <b>Para usar sempre pelo iPhone:</b> toque em <b>Compartilhar</b> (o quadrado com a seta, embaixo) → <b>Adicionar à Tela de Início</b>. Vira um ícone como o de um aplicativo, e o iPhone não apaga o número do pedido nem os dados.</div>
+
+<section id="conexao">
+  <div id="conDesligada">
+    <h2>🔒 Conectar à planilha</h2>
+    <p class="dica">Uma vez só neste aparelho. Com a conexão, os clientes aparecem numa lista e cada pedido gerado é gravado na planilha.</p>
+    <div class="linha">
+      <div><label for="senhaPlanilha">Senha</label><input id="senhaPlanilha" autocomplete="off" autocapitalize="off"></div>
+      <div><label for="geradoPor">Seu nome</label><input id="geradoPor" placeholder="ex.: Francisco"></div>
+    </div>
+    <button type="button" class="secundario" id="conectar">Conectar</button>
+  </div>
+  <div id="conLigada" class="status-planilha"></div>
+  <p class="erro" id="erroConexao"></p>
+</section>
 
 <section>
   <h2>1. Pedido</h2>
@@ -467,6 +486,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
 <section>
   <h2>2. Comprador</h2>
+  <div class="lista-cad"><label for="listaComprador">Escolher da lista</label><select id="listaComprador"></select></div>
   <label for="comprador">Dados <span class="dica">(uma informação por linha)</span></label>
   <textarea id="comprador" rows="6"></textarea>
   <label for="apelidoComprador">Nome curto <span class="dica">(só para o nome do arquivo)</span></label>
@@ -475,6 +495,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
 <section>
   <h2>3. Vendedor</h2>
+  <div class="lista-cad"><label for="listaVendedor">Escolher da lista</label><select id="listaVendedor"></select></div>
   <label for="vendedor">Dados <span class="dica">(uma informação por linha)</span></label>
   <textarea id="vendedor" rows="6"></textarea>
   <label for="apelidoVendedor">Nome curto <span class="dica">(só para o nome do arquivo)</span></label>
@@ -501,6 +522,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 <section>
   <div class="resumo" id="resumo"></div>
   <p class="erro" id="erro"></p>
+  <p class="aviso-ok" id="avisoPlanilha"></p>
   <button type="button" class="grande" id="gerar">GERAR PDF</button>
   <button type="button" class="secundario" id="verPrevia">Ver como vai ficar</button>
 </section>
@@ -843,7 +865,11 @@ $('gerar').onclick = () => {
   const r = montar(); if (!r) return;
   const nome = `PED ${r.dados.numero} ${r.dados.ano} ${estado.apelidoComprador.trim()} E ${estado.apelidoVendedor.trim()}`.replace(/\s+/g, ' ').trim();
   r.doc.setProperties({ title: nome, author: r.dados.assinante });
-  entregar(r.doc, nome).then(ok => { if (ok) { estado.ultimoGerado = r.dados.numero; salvar(); } });
+  entregar(r.doc, nome).then(ok => {
+    if (!ok) return;
+    estado.ultimoGerado = r.dados.numero; salvar();
+    enfileirarPedido(r.dados);
+  });
 };
 // No celular: abre a tela de compartilhar (WhatsApp etc.) com o PDF anexado. No computador: baixa o arquivo.
 async function entregar(doc, nome) {
@@ -908,9 +934,117 @@ $('gerarDaPrevia').onclick = () => { fecharPrevia(); $('gerar').click(); };
 document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharPrevia(); });
 $('restaurar').onclick = () => {
   if (!confirm('Voltar todos os campos ao modelo original?')) return;
-  try { localStorage.removeItem(CHAVE); } catch (e) {}
+  // a conexão com a planilha e os pedidos ainda não enviados continuam
+  const manter = { senha: estado.senha, geradoPor: estado.geradoPor, pendentes: estado.pendentes };
+  try { localStorage.setItem(CHAVE, JSON.stringify(manter)); } catch (e) {}
   location.reload();
 };
+
+// ===== Planilha MASTER_MG (Google) =====
+const API_PLANILHA = 'https://script.google.com/macros/s/AKfycbzQohVql8sGLE1sMBc3ojxnqWuFTP_DPSHNAu67EZp-aBHU4SMxbx0ScuBfCGFl9LfL/exec';
+let cadastro = { compradores: [], vendedores: [] };
+
+async function chamarPlanilha(corpo) {
+  const r = await fetch(API_PLANILHA, { method: 'POST', body: JSON.stringify(Object.assign({ senha: estado.senha }, corpo)) });
+  const j = await r.json();
+  if (!j.ok) throw new Error(j.erro || 'erro');
+  return j;
+}
+// bloco de texto do pedido  <->  campos do cadastro
+function blocoDeCadastro(c) {
+  return [c.razao, c.endereco, c.local, c.cnpj && 'CNPJ: ' + c.cnpj, c.ie && 'IE: ' + c.ie].filter(Boolean).join('\n');
+}
+function cadastroDeBloco(texto, apelido) {
+  const l = String(texto).split('\n').map(s => s.trim()).filter(Boolean);
+  const pega = re => { const x = l.find(s => re.test(s)); return x ? x.replace(re, '').replace(/^\s*:?\s*/, '').trim() : ''; };
+  const resto = l.slice(1).filter(s => !/^CNPJ\b/i.test(s) && !/^IE\b/i.test(s));
+  return { apelido: String(apelido || '').trim().toUpperCase(), razao: l[0] || '', endereco: resto[0] || '',
+           local: resto.slice(1).join(' – '), cnpj: pega(/^CNPJ\b/i), ie: pega(/^IE\b/i) };
+}
+function preencherLista(sel, itens, campoTexto, campoApelido) {
+  sel.innerHTML = '<option value="">— escolher —</option>' + itens.map((c, i) => `<option value="${i}">${c.apelido.replace(/</g, '&lt;')}</option>`).join('');
+  sel.onchange = () => {
+    const c = itens[sel.value]; if (!c) return;
+    $(campoTexto).value = estado[campoTexto] = blocoDeCadastro(c);
+    $(campoApelido).value = estado[campoApelido] = c.apelido;
+    atualizar(); sel.value = '';
+  };
+}
+let ultimoStatus = '';
+function mostrarConexao(msg) {
+  if (msg) ultimoStatus = msg; else msg = ultimoStatus;
+  const ligada = !!estado.senha;
+  document.body.classList.toggle('conectado', ligada);
+  $('conDesligada').style.display = ligada ? 'none' : 'block';
+  $('conLigada').style.display = ligada ? 'block' : 'none';
+  if (ligada) {
+    const pend = (estado.pendentes || []).length;
+    $('conLigada').innerHTML = (msg || '✅ Conectado à planilha') +
+      (pend ? ` · <b>${pend} pedido(s) aguardando envio</b>` : '') +
+      ' <button type="button" id="desconectar">desconectar</button>';
+    $('desconectar').onclick = () => {
+      if (!confirm('Desconectar este aparelho da planilha?')) return;
+      estado.senha = ''; ultimoStatus = ''; salvar(); mostrarConexao();
+    };
+  }
+}
+async function carregarDaPlanilha() {
+  if (!estado.senha) return mostrarConexao();
+  try {
+    const ano = Number((estado.data || hoje()).slice(0, 4));
+    const j = await chamarPlanilha({ acao: 'dados', ano });
+    cadastro = j;
+    preencherLista($('listaComprador'), j.compradores, 'comprador', 'apelidoComprador');
+    preencherLista($('listaVendedor'), j.vendedores, 'vendedor', 'apelidoVendedor');
+    // número do pedido: o próximo depois do último gravado na planilha (vale para todos os aparelhos)
+    if (j.ultimo && Number(estado.numero) <= j.ultimo) { estado.numero = String(j.ultimo + 1); $('numero').value = estado.numero; salvar(); }
+    mostrarConexao(`✅ Conectado à planilha · ${j.compradores.length} comprador(es) · ${j.vendedores.length} vendedor(es)`);
+    $('erroConexao').textContent = '';
+  } catch (e) {
+    if (e.message === 'senha') { estado.senha = ''; salvar(); mostrarConexao(); $('erroConexao').textContent = 'Senha errada. Confira e tente de novo.'; }
+    else { mostrarConexao('⚠️ Sem conexão com a planilha agora — os pedidos ficam guardados e são enviados depois'); }
+  }
+}
+function enfileirarPedido(d) {
+  const id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Date.now() + '-' + Math.random().toString(36).slice(2);
+  const pedido = {
+    id, numero: d.numero, data: d.data, frete: d.frete, destino: d.destino, dias: d.dias, geradoPor: estado.geradoPor || '',
+    comprador: cadastroDeBloco(estado.comprador, estado.apelidoComprador),
+    vendedor: cadastroDeBloco(estado.vendedor, estado.apelidoVendedor),
+    itens: d.itens.map(it => ({ unidade: it.unidade, qtd: it.qtd, preco: it.preco, icms: it.icms, marca: it.marca, produto: it.produto })),
+  };
+  estado.pendentes = (estado.pendentes || []).concat([pedido]); salvar();
+  enviarPendentes();
+}
+let enviando = false;
+async function enviarPendentes() {
+  if (enviando || !estado.senha || !(estado.pendentes || []).length) return mostrarConexao();
+  enviando = true;
+  try {
+    while (estado.pendentes.length) {
+      const p = estado.pendentes[0];
+      const j = await chamarPlanilha({ acao: 'registrar', pedido: p });
+      estado.pendentes.shift(); salvar();
+      // sem "ultimo" na resposta = este mesmo pedido já tinha sido gravado (reenvio): nada a avisar
+      if ('ultimo' in j) $('avisoPlanilha').textContent = `✅ Pedido ${p.numero} gravado na planilha.` +
+        (j.repetido ? ' ⚠️ Já existia outro pedido com este número — confira na planilha.' : '');
+    }
+    carregarDaPlanilha();
+  } catch (e) {
+    $('avisoPlanilha').textContent = '';
+    mostrarConexao('⚠️ Sem conexão com a planilha agora — os pedidos ficam guardados e são enviados depois');
+  } finally { enviando = false; }
+}
+$('conectar').onclick = async () => {
+  const s = $('senhaPlanilha').value.trim();
+  if (!s) { $('erroConexao').textContent = 'Digite a senha.'; return; }
+  estado.senha = s; estado.geradoPor = $('geradoPor').value.trim(); salvar();
+  $('erroConexao').textContent = 'Conectando…';
+  await carregarDaPlanilha();
+  enviarPendentes();
+};
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { carregarDaPlanilha(); enviarPendentes(); } });
+carregarDaPlanilha().then(enviarPendentes);
 </script>
 </body>
 </html>
